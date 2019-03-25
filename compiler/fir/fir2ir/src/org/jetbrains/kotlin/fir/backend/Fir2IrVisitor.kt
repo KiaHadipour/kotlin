@@ -36,10 +36,10 @@ import org.jetbrains.kotlin.ir.types.impl.IrSimpleTypeImpl
 import org.jetbrains.kotlin.ir.util.SymbolTable
 import org.jetbrains.kotlin.ir.util.constructedClassType
 import org.jetbrains.kotlin.ir.util.constructors
+import org.jetbrains.kotlin.ir.util.isInterface
 import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
-import org.jetbrains.kotlin.psi.KtSecondaryConstructor
 import org.jetbrains.kotlin.psi2ir.PsiSourceManager
 import org.jetbrains.kotlin.types.Variance
 
@@ -82,8 +82,8 @@ class Fir2IrVisitor(
         return this
     }
 
-    private fun <T : IrDeclaration> T.setParent(parent: IrDeclarationParent = parentStack.last()): T {
-        this.parent = parent
+    private fun <T : IrDeclaration> T.setParentByParentStack(): T {
+        this.parent = parentStack.last()
         return this
     }
 
@@ -147,7 +147,7 @@ class Fir2IrVisitor(
                 startOffset, endOffset, thisOrigin, symbol,
                 Name.special("<this>"), -1, thisType,
                 varargElementType = null, isCrossinline = false, isNoinline = false
-            ).setParent()
+            ).setParentByParentStack()
         }
         withClass {
             klass.declarations.forEach {
@@ -162,16 +162,15 @@ class Fir2IrVisitor(
 
     override fun visitRegularClass(regularClass: FirRegularClass, data: Any?): IrElement {
         return declarationStorage.getIrClass(regularClass, setParent = false)
-            .setParent()
+            .setParentByParentStack()
             .withParent {
                 setClassContent(regularClass)
             }
     }
 
-    private fun <T : IrFunction> T.setContent(descriptor: WrappedCallableDescriptor<T>, firFunction: FirFunction): T {
-        setParent()
+    private fun <T : IrFunction> T.setFunctionContent(descriptor: FunctionDescriptor, firFunction: FirFunction): T {
+        setParentByParentStack()
         withParent {
-            descriptor.bind(this)
             symbolTable.enterScope(descriptor)
             val containingClass = classStack.lastOrNull()
             if (firFunction !is FirConstructor && containingClass != null) {
@@ -185,7 +184,7 @@ class Fir2IrVisitor(
                         startOffset, endOffset, thisOrigin, symbol,
                         Name.special("<this>"), -1, thisType,
                         varargElementType = null, isCrossinline = false, isNoinline = false
-                    ).setParent()
+                    ).setParentByParentStack()
                 }
             }
             if (firFunction !is FirDefaultPropertySetter) {
@@ -200,31 +199,19 @@ class Fir2IrVisitor(
     }
 
     override fun visitConstructor(constructor: FirConstructor, data: Any?): IrElement {
-        val ktConstructor = constructor.psi
-        val descriptor = WrappedClassConstructorDescriptor()
-        val origin = IrDeclarationOrigin.DEFINED
-        val isPrimary = ktConstructor !is KtSecondaryConstructor
-        return constructor.convertWithOffsets { startOffset, endOffset ->
-            symbolTable.declareConstructor(startOffset, endOffset, origin, descriptor) { symbol ->
-                IrConstructorImpl(
-                    startOffset, endOffset, origin, symbol,
-                    constructor.name, constructor.visibility,
-                    constructor.returnTypeRef.toIrType(session, declarationStorage),
-                    false, false, isPrimary
-                ).setContent(descriptor, constructor).apply {
-                    if (isPrimary) {
-                        val body = this.body as IrBlockBody? ?: IrBlockBodyImpl(startOffset, endOffset)
-                        val delegatedConstructor = constructor.delegatedConstructor
-                        if (delegatedConstructor != null) {
-                            //body.statements += delegatedConstructor.accept(this@Fir2IrVisitor, null) as IrStatement
-                        }
-                        val irClass = parent as IrClass
-                        body.statements += IrInstanceInitializerCallImpl(
-                            startOffset, endOffset, irClass.symbol, constructedClassType
-                        )
-                        this.body = body
-                    }
+        val irConstructor = declarationStorage.getIrConstructor(constructor, setParent = false)
+        return irConstructor.setParentByParentStack().setFunctionContent(irConstructor.descriptor, constructor).apply {
+            if (isPrimary) {
+                val body = this.body as IrBlockBody? ?: IrBlockBodyImpl(startOffset, endOffset)
+                val delegatedConstructor = constructor.delegatedConstructor
+                if (delegatedConstructor != null) {
+                    //body.statements += delegatedConstructor.accept(this@Fir2IrVisitor, null) as IrStatement
                 }
+                val irClass = parent as IrClass
+                body.statements += IrInstanceInitializerCallImpl(
+                    startOffset, endOffset, irClass.symbol, constructedClassType
+                )
+                this.body = body
             }
         }
     }
@@ -254,19 +241,8 @@ class Fir2IrVisitor(
     }
 
     override fun visitNamedFunction(namedFunction: FirNamedFunction, data: Any?): IrElement {
-        val descriptor = WrappedSimpleFunctionDescriptor()
-        val origin = IrDeclarationOrigin.DEFINED
-        return namedFunction.convertWithOffsets { startOffset, endOffset ->
-            symbolTable.declareSimpleFunction(startOffset, endOffset, origin, descriptor) { symbol ->
-                IrFunctionImpl(
-                    startOffset, endOffset, origin, symbol,
-                    namedFunction.name, namedFunction.visibility, namedFunction.modality!!,
-                    namedFunction.returnTypeRef.toIrType(session, declarationStorage),
-                    namedFunction.isInline, namedFunction.isExternal,
-                    namedFunction.isTailRec, namedFunction.isSuspend
-                ).withFunction { setContent(descriptor, namedFunction) }
-            }
-        }
+        val irFunction = declarationStorage.getIrFunction(namedFunction, setParent = false)
+        return irFunction.setParentByParentStack().withFunction { setFunctionContent(irFunction.descriptor, namedFunction) }
     }
 
     override fun visitValueParameter(valueParameter: FirValueParameter, data: Any?): IrElement {
@@ -286,53 +262,43 @@ class Fir2IrVisitor(
         }
     }
 
-    override fun visitProperty(property: FirProperty, data: Any?): IrProperty {
-        val descriptor = WrappedPropertyDescriptor()
-        val origin = IrDeclarationOrigin.DEFINED
-        return property.convertWithOffsets { startOffset, endOffset ->
-            symbolTable.declareProperty(
-                startOffset, endOffset,
-                origin, descriptor, property.delegate != null
-            ) { symbol ->
-                IrPropertyImpl(
-                    startOffset, endOffset, origin, symbol,
-                    property.name, property.visibility, property.modality!!,
-                    property.isVar, property.isConst, property.isLateInit,
-                    property.delegate != null,
-                    // TODO
-                    isExternal = false
-                )
-            }.setParent().withProperty {
-                descriptor.bind(this)
-                val initializer = property.initializer
-                // TODO: this check is very preliminary, FIR resolve should determine backing field presence itself
-                if (initializer != null || property.getter is FirDefaultPropertyGetter ||
-                    property.isVar && property.setter is FirDefaultPropertySetter
-                ) {
-                    val backingOrigin = IrDeclarationOrigin.PROPERTY_BACKING_FIELD
-                    val type = property.returnTypeRef.toIrType(session, declarationStorage)
-                    backingField = symbolTable.declareField(
-                        startOffset, endOffset, backingOrigin, descriptor, type
-                    ) { symbol ->
-                        IrFieldImpl(
-                            startOffset, endOffset, backingOrigin, symbol,
-                            property.name, type, property.visibility,
-                            isFinal = property.isVal, isExternal = false, isStatic = false
-                        )
-                    }.apply {
-                        val initializerExpression = initializer?.accept(this@Fir2IrVisitor, data) as IrExpression?
-                        this.initializer = initializerExpression?.let { IrExpressionBodyImpl(it) }
-                    }
-                }
-                getter = property.getter.accept(this@Fir2IrVisitor, data) as IrSimpleFunction
-                if (property.isVar) {
-                    setter = property.setter.accept(this@Fir2IrVisitor, data) as IrSimpleFunction
-                }
-                property.annotations.forEach {
-                    annotations += it.accept(this@Fir2IrVisitor, data) as IrCall
+    private fun IrProperty.setPropertyContent(descriptor: PropertyDescriptor, property: FirProperty): IrProperty {
+        val initializer = property.initializer
+        val irParent = this.parent
+        val type = property.returnTypeRef.toIrType(session, declarationStorage)
+        // TODO: this checks are very preliminary, FIR resolve should determine backing field presence itself
+        if (irParent !is IrClass || !irParent.isInterface) {
+            if (initializer != null || property.getter is FirDefaultPropertyGetter ||
+                property.isVar && property.setter is FirDefaultPropertySetter
+            ) {
+                val backingOrigin = IrDeclarationOrigin.PROPERTY_BACKING_FIELD
+                backingField = symbolTable.declareField(
+                    startOffset, endOffset, backingOrigin, descriptor, type
+                ) { symbol ->
+                    IrFieldImpl(
+                        startOffset, endOffset, backingOrigin, symbol,
+                        property.name, type, property.visibility,
+                        isFinal = property.isVal, isExternal = false, isStatic = false
+                    )
+                }.apply {
+                    val initializerExpression = initializer?.accept(this@Fir2IrVisitor, null) as IrExpression?
+                    this.initializer = initializerExpression?.let { IrExpressionBodyImpl(it) }
                 }
             }
         }
+        getter = property.getter.accept(this@Fir2IrVisitor, type) as IrSimpleFunction
+        if (property.isVar) {
+            setter = property.setter.accept(this@Fir2IrVisitor, type) as IrSimpleFunction
+        }
+        property.annotations.forEach {
+            annotations += it.accept(this@Fir2IrVisitor, null) as IrCall
+        }
+        return this
+    }
+
+    override fun visitProperty(property: FirProperty, data: Any?): IrProperty {
+        val irProperty = declarationStorage.getIrProperty(property, setParent = false)
+        return irProperty.setParentByParentStack().withProperty { setPropertyContent(irProperty.descriptor, property) }
     }
 
     private fun IrFieldAccessExpression.setReceiver(declaration: IrDeclaration): IrFieldAccessExpression {
@@ -347,7 +313,7 @@ class Fir2IrVisitor(
 
     private fun createPropertyAccessor(
         propertyAccessor: FirPropertyAccessor, startOffset: Int, endOffset: Int,
-        correspondingProperty: IrProperty, isDefault: Boolean
+        correspondingProperty: IrProperty, isDefault: Boolean, propertyType: IrType
     ): IrSimpleFunction {
         val origin = when {
             isDefault -> IrDeclarationOrigin.DEFAULT_PROPERTY_ACCESSOR
@@ -365,43 +331,48 @@ class Fir2IrVisitor(
                 Name.special("<$prefix-${correspondingProperty.name}>"),
                 propertyAccessor.visibility, correspondingProperty.modality, accessorReturnType,
                 isInline = false, isExternal = false, isTailrec = false, isSuspend = false
-            ).setContent(descriptor, propertyAccessor).apply {
-                correspondingPropertySymbol = symbolTable.referenceProperty(correspondingProperty.descriptor)
-                if (isDefault) {
-                    withParent {
-                        symbolTable.enterScope(descriptor)
-                        val propertyType = correspondingProperty.backingField!!.type
-                        if (isSetter) {
-                            valueParameters += symbolTable.declareValueParameter(
-                                startOffset, endOffset, origin, WrappedValueParameterDescriptor(), propertyType
-                            ) { symbol ->
-                                IrValueParameterImpl(
-                                    startOffset, endOffset, IrDeclarationOrigin.DEFINED, symbol,
-                                    Name.special("<set-?>"), 0, propertyType,
-                                    varargElementType = null,
-                                    isCrossinline = false, isNoinline = false
-                                ).setParent()
-                            }
-                        }
-                        val fieldSymbol = symbolTable.referenceField(correspondingProperty.descriptor)
-                        val declaration = this
-                        body = IrBlockBodyImpl(
-                            startOffset, endOffset,
-                            listOf(
-                                if (isSetter) {
-                                    IrSetFieldImpl(startOffset, endOffset, fieldSymbol, accessorReturnType).apply {
-                                        setReceiver(declaration)
-                                        value = IrGetValueImpl(startOffset, endOffset, propertyType, valueParameters.first().symbol)
-                                    }
-                                } else {
-                                    IrReturnImpl(
-                                        startOffset, endOffset, nothingType, symbol,
-                                        IrGetFieldImpl(startOffset, endOffset, fieldSymbol, propertyType).setReceiver(declaration)
-                                    )
+            ).withFunction {
+                descriptor.bind(this)
+                setFunctionContent(descriptor, propertyAccessor).apply {
+                    correspondingPropertySymbol = symbolTable.referenceProperty(correspondingProperty.descriptor)
+                    if (isDefault) {
+                        withParent {
+                            symbolTable.enterScope(descriptor)
+                            val backingField = correspondingProperty.backingField
+                            if (isSetter) {
+                                valueParameters += symbolTable.declareValueParameter(
+                                    startOffset, endOffset, origin, WrappedValueParameterDescriptor(), propertyType
+                                ) { symbol ->
+                                    IrValueParameterImpl(
+                                        startOffset, endOffset, IrDeclarationOrigin.DEFINED, symbol,
+                                        Name.special("<set-?>"), 0, propertyType,
+                                        varargElementType = null,
+                                        isCrossinline = false, isNoinline = false
+                                    ).setParentByParentStack()
                                 }
-                            )
-                        )
-                        symbolTable.leaveScope(descriptor)
+                            }
+                            val fieldSymbol = symbolTable.referenceField(correspondingProperty.descriptor)
+                            val declaration = this
+                            if (backingField != null) {
+                                body = IrBlockBodyImpl(
+                                    startOffset, endOffset,
+                                    listOf(
+                                        if (isSetter) {
+                                            IrSetFieldImpl(startOffset, endOffset, fieldSymbol, accessorReturnType).apply {
+                                                setReceiver(declaration)
+                                                value = IrGetValueImpl(startOffset, endOffset, propertyType, valueParameters.first().symbol)
+                                            }
+                                        } else {
+                                            IrReturnImpl(
+                                                startOffset, endOffset, nothingType, symbol,
+                                                IrGetFieldImpl(startOffset, endOffset, fieldSymbol, propertyType).setReceiver(declaration)
+                                            )
+                                        }
+                                    )
+                                )
+                            }
+                            symbolTable.leaveScope(descriptor)
+                        }
                     }
                 }
             }
@@ -413,7 +384,8 @@ class Fir2IrVisitor(
         return propertyAccessor.convertWithOffsets { startOffset, endOffset ->
             createPropertyAccessor(
                 propertyAccessor, startOffset, endOffset, correspondingProperty,
-                isDefault = propertyAccessor is FirDefaultPropertyGetter || propertyAccessor is FirDefaultPropertySetter
+                isDefault = propertyAccessor is FirDefaultPropertyGetter || propertyAccessor is FirDefaultPropertySetter,
+                propertyType = data as IrType
             )
         }
     }
@@ -439,7 +411,7 @@ class Fir2IrVisitor(
         return returnExpression.convertWithOffsets { startOffset, endOffset ->
             IrReturnImpl(
                 startOffset, endOffset, nothingType,
-                symbolTable.referenceSimpleFunction(WrappedSimpleFunctionDescriptor().apply { bind(irTarget) }),
+                symbolTable.referenceSimpleFunction(irTarget.descriptor),
                 returnExpression.result.accept(this, data) as IrExpression
             )
         }
@@ -447,7 +419,7 @@ class Fir2IrVisitor(
 
     private fun FirQualifiedAccess.toIrExpression(typeRef: FirTypeRef): IrExpression {
         val type = typeRef.toIrType(this@Fir2IrVisitor.session, declarationStorage)
-        val symbol = calleeReference.toSymbol(symbolTable)
+        val symbol = calleeReference.toSymbol(declarationStorage)
         return typeRef.convertWithOffsets { startOffset, endOffset ->
             when {
                 symbol is IrFunctionSymbol -> IrCallImpl(startOffset, endOffset, type, symbol)
@@ -480,7 +452,7 @@ class Fir2IrVisitor(
 
     override fun visitVariableAssignment(variableAssignment: FirVariableAssignment, data: Any?): IrElement {
         val calleeReference = variableAssignment.calleeReference
-        val symbol = calleeReference.toSymbol(symbolTable)
+        val symbol = calleeReference.toSymbol(declarationStorage)
         return variableAssignment.convertWithOffsets { startOffset, endOffset ->
             if (symbol is IrFieldSymbol && symbol.isBound) {
                 IrSetFieldImpl(
@@ -518,7 +490,7 @@ class Fir2IrVisitor(
                     Name.special("<no name provided>"), anonymousObject.classKind,
                     Visibilities.LOCAL, modality,
                     isCompanion = false, isInner = false, isData = false, isExternal = false, isInline = false
-                ).setParent().withParent {
+                ).setParentByParentStack().withParent {
                     setClassContent(anonymousObject)
                 }
             }
