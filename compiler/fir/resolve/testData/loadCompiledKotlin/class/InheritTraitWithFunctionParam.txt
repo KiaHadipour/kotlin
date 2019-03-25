@@ -1,0 +1,7 @@
+public abstract interface Trait : R|kotlin/Any| {
+    public open fun f(a: R|kotlin/String|): R|kotlin/Unit|
+
+}
+
+public open class Class : R|test/Trait| {
+}

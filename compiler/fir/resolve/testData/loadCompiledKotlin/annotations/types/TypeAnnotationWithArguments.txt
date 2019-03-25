@@ -1,0 +1,7 @@
+public final class TypeAnnotationWithArguments : R|kotlin/Any| {
+    public final fun foo(param: R|kotlin/ranges/IntRange|): R|kotlin/Unit|
+
+}
+
+public final annotation class Ann : R|kotlin/Annotation| {
+}
