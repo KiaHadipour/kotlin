@@ -21,6 +21,8 @@ interface FirClass : FirDeclarationContainer, FirStatement, FirAnnotationContain
 
     val classKind: ClassKind
 
+    fun getPrimaryConstructorIfAny(): FirConstructor? = declarations.firstOrNull() as? FirConstructor
+
     fun buildClassSpecificUseSiteScope(useSiteSession: FirSession): FirScope? = null
 
     override fun <R, D> accept(visitor: FirVisitor<R, D>, data: D): R =

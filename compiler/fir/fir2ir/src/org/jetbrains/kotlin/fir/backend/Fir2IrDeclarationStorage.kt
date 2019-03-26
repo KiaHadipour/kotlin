@@ -20,15 +20,12 @@ import org.jetbrains.kotlin.fir.symbols.impl.FirPropertySymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirVariableSymbol
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.declarations.impl.*
-import org.jetbrains.kotlin.ir.expressions.IrExpression
-import org.jetbrains.kotlin.ir.expressions.impl.IrExpressionBodyImpl
 import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
 import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
 import org.jetbrains.kotlin.ir.symbols.IrPropertySymbol
 import org.jetbrains.kotlin.ir.symbols.IrValueSymbol
 import org.jetbrains.kotlin.ir.util.SymbolTable
 import org.jetbrains.kotlin.name.FqName
-import org.jetbrains.kotlin.psi.KtSecondaryConstructor
 
 class Fir2IrDeclarationStorage(
     private val session: FirSession,
@@ -139,8 +136,7 @@ class Fir2IrDeclarationStorage(
         return constructorCache.getOrPut(constructor) {
             val descriptor = WrappedClassConstructorDescriptor()
             val origin = IrDeclarationOrigin.DEFINED
-            // TODO: introduce isPrimary property
-            val isPrimary = constructor.psi !is KtSecondaryConstructor
+            val isPrimary = constructor.isPrimary
             return constructor.convertWithOffsets { startOffset, endOffset ->
                 irSymbolTable.declareConstructor(startOffset, endOffset, origin, descriptor) { symbol ->
                     IrConstructorImpl(
