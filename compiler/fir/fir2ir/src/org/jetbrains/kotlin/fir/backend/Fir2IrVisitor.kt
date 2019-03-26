@@ -178,6 +178,11 @@ class Fir2IrVisitor(
         for (superTypeRef in klass.superTypeRefs) {
             superTypes += superTypeRef.toIrType(session, declarationStorage)
         }
+        if (klass is FirRegularClass) {
+            for ((index, typeParameter) in klass.typeParameters.withIndex()) {
+                typeParameters += declarationStorage.getIrTypeParameter(typeParameter, index).setParentByParentStack()
+            }
+        }
         val useSiteScope = (klass as? FirRegularClass)?.buildUseSiteScope(session)
         val superTypesFunctionNames = klass.collectFunctionNamesFromSupertypes()
         symbolTable.enterScope(descriptor)

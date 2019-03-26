@@ -14,8 +14,8 @@ import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.symbols.*
 import org.jetbrains.kotlin.ir.types.IrErrorType
 import org.jetbrains.kotlin.ir.types.IrType
-import org.jetbrains.kotlin.ir.types.impl.IrErrorTypeImpl
-import org.jetbrains.kotlin.ir.types.impl.IrSimpleTypeImpl
+import org.jetbrains.kotlin.ir.types.IrTypeArgument
+import org.jetbrains.kotlin.ir.types.impl.*
 import org.jetbrains.kotlin.psi.psiUtil.endOffset
 import org.jetbrains.kotlin.psi.psiUtil.startOffsetSkippingComments
 import org.jetbrains.kotlin.types.Variance
@@ -43,21 +43,44 @@ fun ConeKotlinType.toIrType(session: FirSession, declarationStorage: Fir2IrDecla
         is ConeLookupTagBasedType -> {
             val firSymbol = this.lookupTag.toSymbol(session) ?: return createErrorType()
             val irSymbol = firSymbol.toIrSymbol(declarationStorage)
-            // TODO: arguments, annotations
-            IrSimpleTypeImpl(irSymbol, this.isMarkedNullable, emptyList(), emptyList())
+            // TODO: annotations
+            IrSimpleTypeImpl(
+                irSymbol, this.isMarkedNullable,
+                typeArguments.map { it.toIrTypeArgument(session, declarationStorage) },
+                emptyList()
+            )
         }
         is ConeFlexibleType -> TODO()
         is ConeCapturedType -> TODO()
     }
 }
 
+fun ConeKotlinTypeProjection.toIrTypeArgument(session: FirSession, declarationStorage: Fir2IrDeclarationStorage): IrTypeArgument {
+    return when (this) {
+        ConeStarProjection -> IrStarProjectionImpl
+        is ConeKotlinTypeProjectionIn -> {
+            val irType = this.type.toIrType(session, declarationStorage)
+            makeTypeProjection(irType, Variance.IN_VARIANCE)
+        }
+        is ConeKotlinTypeProjectionOut -> {
+            val irType = this.type.toIrType(session, declarationStorage)
+            makeTypeProjection(irType, Variance.OUT_VARIANCE)
+        }
+        is ConeKotlinType -> {
+            val irType = toIrType(session, declarationStorage)
+            makeTypeProjection(irType, Variance.INVARIANT)
+        }
+    }
+}
+
 fun ConeClassifierSymbol.toIrSymbol(declarationStorage: Fir2IrDeclarationStorage): IrClassifierSymbol {
-    when (this) {
-        is FirTypeParameterSymbol -> TODO()
+    return when (this) {
+        is FirTypeParameterSymbol -> {
+            toTypeParameterSymbol(declarationStorage)
+        }
         is FirTypeAliasSymbol -> TODO()
         is FirClassSymbol -> {
-            // TODO: at some later stage we should bind symbol to its IR
-            return toClassSymbol(declarationStorage)
+            toClassSymbol(declarationStorage)
         }
         else -> throw AssertionError("Should not be here: $this")
     }
@@ -83,6 +106,10 @@ fun FirNamedReference.toSymbol(declarationStorage: Fir2IrDeclarationStorage): Ir
 
 fun FirClassSymbol.toClassSymbol(declarationStorage: Fir2IrDeclarationStorage): IrClassSymbol {
     return declarationStorage.getIrClassSymbol(this)
+}
+
+fun FirTypeParameterSymbol.toTypeParameterSymbol(declarationStorage: Fir2IrDeclarationStorage): IrTypeParameterSymbol {
+    return declarationStorage.getIrTypeParameterSymbol(this)
 }
 
 fun FirFunctionSymbol.toFunctionSymbol(declarationStorage: Fir2IrDeclarationStorage): IrFunctionSymbol {

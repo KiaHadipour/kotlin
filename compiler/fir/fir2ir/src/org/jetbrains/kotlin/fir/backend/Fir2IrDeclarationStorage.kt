@@ -14,16 +14,10 @@ import org.jetbrains.kotlin.fir.expressions.FirVariable
 import org.jetbrains.kotlin.fir.resolve.FirSymbolProvider
 import org.jetbrains.kotlin.fir.service
 import org.jetbrains.kotlin.fir.symbols.ConeCallableSymbol
-import org.jetbrains.kotlin.fir.symbols.impl.FirClassSymbol
-import org.jetbrains.kotlin.fir.symbols.impl.FirFunctionSymbol
-import org.jetbrains.kotlin.fir.symbols.impl.FirPropertySymbol
-import org.jetbrains.kotlin.fir.symbols.impl.FirVariableSymbol
+import org.jetbrains.kotlin.fir.symbols.impl.*
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.declarations.impl.*
-import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
-import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
-import org.jetbrains.kotlin.ir.symbols.IrPropertySymbol
-import org.jetbrains.kotlin.ir.symbols.IrValueSymbol
+import org.jetbrains.kotlin.ir.symbols.*
 import org.jetbrains.kotlin.ir.util.SymbolTable
 import org.jetbrains.kotlin.name.FqName
 
@@ -37,6 +31,8 @@ class Fir2IrDeclarationStorage(
     private val fragmentCache = mutableMapOf<FqName, IrExternalPackageFragment>()
 
     private val classCache = mutableMapOf<FirRegularClass, IrClass>()
+
+    private val typeParameterCache = mutableMapOf<FirTypeParameter, IrTypeParameter>()
 
     private val functionCache = mutableMapOf<FirNamedFunction, IrSimpleFunction>()
 
@@ -81,6 +77,25 @@ class Fir2IrDeclarationStorage(
                                 parent = getIrExternalPackageFragment(packageFqName)
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    fun getIrTypeParameter(typeParameter: FirTypeParameter, index: Int = 0): IrTypeParameter {
+        return typeParameterCache.getOrPut(typeParameter) {
+            val descriptor = WrappedTypeParameterDescriptor()
+            val origin = IrDeclarationOrigin.DEFINED
+            typeParameter.convertWithOffsets { startOffset, endOffset ->
+                irSymbolTable.declareGlobalTypeParameter(startOffset, endOffset, origin, descriptor) { symbol ->
+                    IrTypeParameterImpl(
+                        startOffset, endOffset, origin, symbol,
+                        typeParameter.name, index,
+                        typeParameter.isReified,
+                        typeParameter.variance
+                    ).apply {
+                        descriptor.bind(this)
                     }
                 }
             }
@@ -223,6 +238,11 @@ class Fir2IrDeclarationStorage(
     fun getIrClassSymbol(firClassSymbol: FirClassSymbol): IrClassSymbol {
         val irClass = getIrClass(firClassSymbol.fir)
         return irSymbolTable.referenceClass(irClass.descriptor)
+    }
+
+    fun getIrTypeParameterSymbol(firTypeParameterSymbol: FirTypeParameterSymbol): IrTypeParameterSymbol {
+        val irTypeParameter = getIrTypeParameter(firTypeParameterSymbol.fir)
+        return irSymbolTable.referenceTypeParameter(irTypeParameter.descriptor)
     }
 
     fun getIrFunctionSymbol(firFunctionSymbol: FirFunctionSymbol): IrFunctionSymbol {
