@@ -52,8 +52,8 @@ object MockLibraryUtil {
             useJava9: Boolean = false
     ): File {
         return compileLibraryToJar(
-                sourcesPath, KotlinTestUtils.tmpDir("testLibrary-" + jarName), jarName, addSources,allowKotlinSources, extraOptions, extraClasspath
-        , useJava9)}
+            sourcesPath, KotlinTestUtils.tmpDirForReusableLibrary("testLibrary-" + jarName), jarName, addSources, allowKotlinSources, extraOptions, extraClasspath
+            , useJava9)}
 
     @JvmStatic
     @JvmOverloads
