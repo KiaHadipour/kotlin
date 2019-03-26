@@ -15,6 +15,7 @@ import org.jetbrains.kotlin.fir.declarations.impl.FirDefaultPropertyGetter
 import org.jetbrains.kotlin.fir.declarations.impl.FirDefaultPropertySetter
 import org.jetbrains.kotlin.fir.descriptors.FirModuleDescriptor
 import org.jetbrains.kotlin.fir.expressions.*
+import org.jetbrains.kotlin.fir.references.FirPropertyFromParameterCallableReference
 import org.jetbrains.kotlin.fir.render
 import org.jetbrains.kotlin.fir.symbols.ConeClassLikeLookupTagImpl
 import org.jetbrains.kotlin.fir.types.FirTypeRef
@@ -440,7 +441,12 @@ class Fir2IrVisitor(
             when {
                 symbol is IrFunctionSymbol -> IrCallImpl(startOffset, endOffset, type, symbol)
                 symbol is IrPropertySymbol && symbol.isBound -> IrCallImpl(startOffset, endOffset, type, symbol.owner.getter!!.symbol)
-                symbol is IrValueSymbol -> IrGetValueImpl(startOffset, endOffset, type, symbol)
+                symbol is IrValueSymbol -> IrGetValueImpl(
+                    startOffset, endOffset, type, symbol,
+                    if (calleeReference is FirPropertyFromParameterCallableReference) {
+                        IrStatementOrigin.INITIALIZE_PROPERTY_FROM_PARAMETER
+                    } else null
+                )
                 else -> IrErrorCallExpressionImpl(startOffset, endOffset, type, "Unresolved reference: ${calleeReference.render()}")
             }
         }
