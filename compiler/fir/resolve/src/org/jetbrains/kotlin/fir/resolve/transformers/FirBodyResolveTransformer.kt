@@ -65,7 +65,7 @@ open class FirBodyResolveTransformer(val session: FirSession, val implicitTypeOn
     override fun transformValueParameter(valueParameter: FirValueParameter, data: Any?): CompositeTransformResult<FirDeclaration> {
         localScopes.lastOrNull()?.storeDeclaration(valueParameter)
         if (valueParameter.returnTypeRef is FirImplicitTypeRef) return valueParameter.compose() // TODO
-        return super.transformValueParameter(valueParameter, data)
+        return super.transformValueParameter(valueParameter, valueParameter.returnTypeRef)
     }
 
 
