@@ -17,7 +17,15 @@ import org.jetbrains.kotlin.fir.descriptors.FirModuleDescriptor
 import org.jetbrains.kotlin.fir.expressions.*
 import org.jetbrains.kotlin.fir.references.FirPropertyFromParameterCallableReference
 import org.jetbrains.kotlin.fir.render
+import org.jetbrains.kotlin.fir.resolve.buildUseSiteScope
+import org.jetbrains.kotlin.fir.resolve.toSymbol
+import org.jetbrains.kotlin.fir.scopes.ProcessorAction
 import org.jetbrains.kotlin.fir.symbols.ConeClassLikeLookupTagImpl
+import org.jetbrains.kotlin.fir.symbols.impl.FirClassSymbol
+import org.jetbrains.kotlin.fir.symbols.impl.FirFunctionSymbol
+import org.jetbrains.kotlin.fir.symbols.impl.FirTypeAliasSymbol
+import org.jetbrains.kotlin.fir.types.ConeClassLikeType
+import org.jetbrains.kotlin.fir.types.FirResolvedTypeRef
 import org.jetbrains.kotlin.fir.types.FirTypeRef
 import org.jetbrains.kotlin.fir.types.impl.ConeClassTypeImpl
 import org.jetbrains.kotlin.fir.types.impl.FirResolvedTypeRefImpl
@@ -135,10 +143,43 @@ class Fir2IrVisitor(
         }
     }
 
+    private fun FirTypeRef.collectFunctionNamesFromThisAndSupertypes(result: MutableList<Name> = mutableListOf()): List<Name> {
+        if (this is FirResolvedTypeRef) {
+            val superType = type
+            if (superType is ConeClassLikeType) {
+                when (val superSymbol = superType.lookupTag.toSymbol(this@Fir2IrVisitor.session)) {
+                    is FirClassSymbol -> {
+                        val superClass = superSymbol.fir
+                        for (declaration in superClass.declarations) {
+                            if (declaration is FirNamedFunction) {
+                                result += declaration.name
+                            }
+                        }
+                        superClass.collectFunctionNamesFromSupertypes(result)
+                    }
+                    is FirTypeAliasSymbol -> {
+                        val superAlias = superSymbol.fir
+                        superAlias.expandedTypeRef.collectFunctionNamesFromThisAndSupertypes(result)
+                    }
+                }
+            }
+        }
+        return result
+    }
+
+    private fun FirClass.collectFunctionNamesFromSupertypes(result: MutableList<Name> = mutableListOf()): List<Name> {
+        for (superTypeRef in superTypeRefs) {
+            superTypeRef.collectFunctionNamesFromThisAndSupertypes(result)
+        }
+        return result
+    }
+
     private fun IrClass.setClassContent(klass: FirClass) {
         for (superTypeRef in klass.superTypeRefs) {
             superTypes += superTypeRef.toIrType(session, declarationStorage)
         }
+        val useSiteScope = (klass as? FirRegularClass)?.buildUseSiteScope(session)
+        val superTypesFunctionNames = klass.collectFunctionNamesFromSupertypes()
         symbolTable.enterScope(descriptor)
         val thisOrigin = IrDeclarationOrigin.INSTANCE_RECEIVER
         val thisType = IrSimpleTypeImpl(symbol, false, emptyList(), emptyList())
@@ -160,9 +201,25 @@ class Fir2IrVisitor(
                     symbolTable.introduceValueParameter(irParameter)
                 }
             }
+            val processedFunctionNames = mutableListOf<Name>()
             klass.declarations.forEach {
                 if (it !is FirConstructor || !it.isPrimary) {
                     declarations += it.accept(this@Fir2IrVisitor, null) as IrDeclaration
+                    if (it is FirNamedFunction) {
+                        processedFunctionNames += it.name
+                    }
+                }
+            }
+            for (name in superTypesFunctionNames) {
+                if (name in processedFunctionNames) continue
+                processedFunctionNames += name
+                useSiteScope?.processFunctionsByName(name) { functionSymbol ->
+                    if (functionSymbol is FirFunctionSymbol) {
+                        val function = functionSymbol.fir
+                        // TODO: this declarations should be FUN FAKE OVERRIDE
+                        declarations += function.accept(this@Fir2IrVisitor, null) as IrDeclaration
+                    }
+                    ProcessorAction.STOP
                 }
             }
             klass.annotations.forEach {
