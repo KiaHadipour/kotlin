@@ -254,7 +254,7 @@ internal class CallableReferenceLowering(val context: JvmBackendContext) : FileL
                 val getSignatureMethod =
                     createGetSignatureMethod(functionReferenceOrLambda.owner.functions.find { it.name.asString() == "getSignature"}!!)
                 val getNameMethod =
-                    createGetNameMethod(functionReferenceOrLambda.owner.properties.find { it.name.asString() == "name" }!!)
+                    createGetNameMethod(functionReferenceOrLambda.owner.functions.find { it.name.asString() == "getName" }!!)
                 val getOwnerMethod =
                     createGetOwnerMethod(functionReferenceOrLambda.owner.functions.find { it.name.asString() == "getOwner" }!!)
 
@@ -474,19 +474,18 @@ internal class CallableReferenceLowering(val context: JvmBackendContext) : FileL
                 }
             }
 
-        private fun createGetNameMethod(superNameProperty: IrProperty): IrSimpleFunction {
-            val superGetter = superNameProperty.getter!!
-            return buildFun {
+        private fun createGetNameMethod(superFunction: IrSimpleFunction): IrSimpleFunction =
+            buildFun {
                 setSourceRange(irFunctionReference)
                 origin = JvmLoweredDeclarationOrigin.FUNCTION_REFERENCE_IMPL
                 name = Name.identifier("getName")
-                returnType = superGetter.returnType
-                visibility = superGetter.visibility
-                modality = superGetter.modality
+                returnType = superFunction.returnType
+                visibility = superFunction.visibility
+                modality = superFunction.modality
             }.apply {
                 val function = this
                 parent = functionReferenceClass
-                overriddenSymbols.add(superGetter.symbol)
+                overriddenSymbols.add(superFunction.symbol)
                 dispatchReceiverParameter = functionReferenceClass.thisReceiver?.copyTo(function)
 
                 val irBuilder = context.createIrBuilder(function.symbol, startOffset, endOffset)
@@ -496,7 +495,6 @@ internal class CallableReferenceLowering(val context: JvmBackendContext) : FileL
                     )
                 }
             }
-        }
 
         private fun createGetOwnerMethod(superFunction: IrSimpleFunction): IrSimpleFunction =
             buildFun {

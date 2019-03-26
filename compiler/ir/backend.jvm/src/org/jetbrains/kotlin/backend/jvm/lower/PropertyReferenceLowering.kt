@@ -295,7 +295,7 @@ internal class PropertyReferenceLowering(val context: JvmBackendContext) : Class
                 fun buildOverride(method: IrSimpleFunction, build: IrBlockBodyBuilder.(List<IrValueParameter>) -> IrExpression) =
                     buildFun {
                         setSourceRange(expression)
-                        name = if (method.name.asString() == "<get-name>") Name.identifier("getName") else method.name
+                        name = method.name
                         returnType = method.returnType
                         visibility = method.visibility
                         origin = referenceClass.origin
@@ -329,7 +329,7 @@ internal class PropertyReferenceLowering(val context: JvmBackendContext) : Class
                     }
                 }
 
-                buildOverride(superClass.properties.single { it.name.asString() == "name" }.getter!!) {
+                buildOverride(superClass.functions.single { it.name.asString() == "getName" }) {
                     irString(expression.descriptor.name.asString())
                 }
 
