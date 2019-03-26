@@ -30,6 +30,7 @@ import org.jetbrains.kotlin.ir.expressions.impl.*
 import org.jetbrains.kotlin.ir.symbols.IrFieldSymbol
 import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
 import org.jetbrains.kotlin.ir.symbols.IrPropertySymbol
+import org.jetbrains.kotlin.ir.symbols.IrValueSymbol
 import org.jetbrains.kotlin.ir.types.IrType
 import org.jetbrains.kotlin.ir.types.impl.IrErrorTypeImpl
 import org.jetbrains.kotlin.ir.types.impl.IrSimpleTypeImpl
@@ -246,18 +247,23 @@ class Fir2IrVisitor(
     }
 
     override fun visitValueParameter(valueParameter: FirValueParameter, data: Any?): IrElement {
-        val descriptor = WrappedValueParameterDescriptor()
-        val origin = IrDeclarationOrigin.DEFINED
-        val type = valueParameter.returnTypeRef.toIrType(session, declarationStorage)
-        return valueParameter.convertWithOffsets { startOffset, endOffset ->
-            symbolTable.declareValueParameter(
-                startOffset, endOffset, origin, descriptor, type
-            ) { symbol ->
-                IrValueParameterImpl(
-                    startOffset, endOffset, origin, symbol,
-                    valueParameter.name, data as Int, type,
-                    null, valueParameter.isCrossinline, valueParameter.isNoinline
+        val irValueParameter = declarationStorage.getIrValueParameter(valueParameter, data as Int)
+        return irValueParameter.setParentByParentStack().apply {
+            val firDefaultValue = valueParameter.defaultValue
+            if (firDefaultValue != null) {
+                this.defaultValue = IrExpressionBodyImpl(
+                    firDefaultValue.accept(this@Fir2IrVisitor, data) as IrExpression
                 )
+            }
+        }
+    }
+
+    override fun visitVariable(variable: FirVariable, data: Any?): IrElement {
+        val irVariable = declarationStorage.getIrVariable(variable)
+        return irVariable.setParentByParentStack().apply {
+            val initializer = variable.initializer
+            if (initializer != null) {
+                this.initializer = initializer.accept(this@Fir2IrVisitor, data) as IrExpression
             }
         }
     }
@@ -424,6 +430,7 @@ class Fir2IrVisitor(
             when {
                 symbol is IrFunctionSymbol -> IrCallImpl(startOffset, endOffset, type, symbol)
                 symbol is IrPropertySymbol && symbol.isBound -> IrCallImpl(startOffset, endOffset, type, symbol.owner.getter!!.symbol)
+                symbol is IrValueSymbol -> IrGetValueImpl(startOffset, endOffset, type, symbol)
                 else -> IrErrorCallExpressionImpl(startOffset, endOffset, type, "Unresolved reference: ${calleeReference.render()}")
             }
         }

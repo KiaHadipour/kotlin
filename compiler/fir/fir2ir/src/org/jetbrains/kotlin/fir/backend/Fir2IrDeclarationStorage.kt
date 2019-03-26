@@ -10,20 +10,22 @@ import org.jetbrains.kotlin.fir.FirSession
 import org.jetbrains.kotlin.fir.declarations.*
 import org.jetbrains.kotlin.fir.descriptors.FirModuleDescriptor
 import org.jetbrains.kotlin.fir.descriptors.FirPackageFragmentDescriptor
+import org.jetbrains.kotlin.fir.expressions.FirVariable
 import org.jetbrains.kotlin.fir.resolve.FirSymbolProvider
 import org.jetbrains.kotlin.fir.service
 import org.jetbrains.kotlin.fir.symbols.ConeCallableSymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirClassSymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirFunctionSymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirPropertySymbol
+import org.jetbrains.kotlin.fir.symbols.impl.FirVariableSymbol
 import org.jetbrains.kotlin.ir.declarations.*
-import org.jetbrains.kotlin.ir.declarations.impl.IrClassImpl
-import org.jetbrains.kotlin.ir.declarations.impl.IrConstructorImpl
-import org.jetbrains.kotlin.ir.declarations.impl.IrFunctionImpl
-import org.jetbrains.kotlin.ir.declarations.impl.IrPropertyImpl
+import org.jetbrains.kotlin.ir.declarations.impl.*
+import org.jetbrains.kotlin.ir.expressions.IrExpression
+import org.jetbrains.kotlin.ir.expressions.impl.IrExpressionBodyImpl
 import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
 import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
 import org.jetbrains.kotlin.ir.symbols.IrPropertySymbol
+import org.jetbrains.kotlin.ir.symbols.IrValueSymbol
 import org.jetbrains.kotlin.ir.util.SymbolTable
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.psi.KtSecondaryConstructor
@@ -42,6 +44,10 @@ class Fir2IrDeclarationStorage(
     private val functionCache = mutableMapOf<FirNamedFunction, IrSimpleFunction>()
 
     private val constructorCache = mutableMapOf<FirConstructor, IrConstructor>()
+
+    private val parameterCache = mutableMapOf<FirValueParameter, IrValueParameter>()
+
+    private val variableCache = mutableMapOf<FirVariable, IrVariable>()
 
     private fun getIrExternalPackageFragment(fqName: FqName): IrExternalPackageFragment {
         return fragmentCache.getOrPut(fqName) {
@@ -179,6 +185,45 @@ class Fir2IrDeclarationStorage(
         }
     }
 
+    fun getIrValueParameter(valueParameter: FirValueParameter, index: Int = -1): IrValueParameter {
+        return parameterCache.getOrPut(valueParameter) {
+            val descriptor = WrappedValueParameterDescriptor()
+            val origin = IrDeclarationOrigin.DEFINED
+            val type = valueParameter.returnTypeRef.toIrType(session, this)
+            valueParameter.convertWithOffsets { startOffset, endOffset ->
+                irSymbolTable.declareValueParameter(
+                    startOffset, endOffset, origin, descriptor, type
+                ) { symbol ->
+                    IrValueParameterImpl(
+                        startOffset, endOffset, origin, symbol,
+                        valueParameter.name, index, type,
+                        null, valueParameter.isCrossinline, valueParameter.isNoinline
+                    ).apply {
+                        descriptor.bind(this)
+                    }
+                }
+            }
+        }
+    }
+
+    fun getIrVariable(variable: FirVariable): IrVariable {
+        return variableCache.getOrPut(variable) {
+            val descriptor = WrappedVariableDescriptor()
+            val origin = IrDeclarationOrigin.DEFINED
+            val type = variable.returnTypeRef.toIrType(session, this)
+            variable.convertWithOffsets { startOffset, endOffset ->
+                irSymbolTable.declareVariable(startOffset, endOffset, origin, descriptor, type) { symbol ->
+                    IrVariableImpl(
+                        startOffset, endOffset, origin, symbol, variable.name, type,
+                        variable.isVar, isConst = false, isLateinit = false
+                    ).apply {
+                        descriptor.bind(this)
+                    }
+                }
+            }
+        }
+    }
+
     fun getIrClassSymbol(firClassSymbol: FirClassSymbol): IrClassSymbol {
         val irClass = getIrClass(firClassSymbol.fir)
         return irSymbolTable.referenceClass(irClass.descriptor)
@@ -201,5 +246,19 @@ class Fir2IrDeclarationStorage(
     fun getIrPropertySymbol(firPropertySymbol: FirPropertySymbol): IrPropertySymbol {
         val irProperty = getIrProperty(firPropertySymbol.fir as FirProperty)
         return irSymbolTable.referenceProperty(irProperty.descriptor)
+    }
+
+    fun getIrValueSymbol(firVariableSymbol: FirVariableSymbol): IrValueSymbol {
+        return when (val firDeclaration = firVariableSymbol.fir) {
+            is FirValueParameter -> {
+                val irDeclaration = getIrValueParameter(firDeclaration)
+                irSymbolTable.referenceValueParameter(irDeclaration.descriptor)
+            }
+            is FirVariable -> {
+                val irDeclaration = getIrVariable(firDeclaration)
+                irSymbolTable.referenceVariable(irDeclaration.descriptor)
+            }
+            else -> throw AssertionError("Should not be here")
+        }
     }
 }

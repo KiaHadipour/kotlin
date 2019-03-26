@@ -447,12 +447,16 @@ open class SymbolTable : ReferenceSymbolTable {
         endOffset: Int,
         origin: IrDeclarationOrigin,
         descriptor: VariableDescriptor,
-        type: IrType
+        type: IrType,
+        variableFactory: (IrVariableSymbol) -> IrVariable = {
+            IrVariableImpl(startOffset, endOffset, origin, it, type)
+        }
+
     ): IrVariable =
         variableSymbolTable.declareLocal(
             descriptor,
             { IrVariableSymbolImpl(descriptor) },
-            { IrVariableImpl(startOffset, endOffset, origin, it, type) }
+            variableFactory
         )
 
     fun declareVariable(
