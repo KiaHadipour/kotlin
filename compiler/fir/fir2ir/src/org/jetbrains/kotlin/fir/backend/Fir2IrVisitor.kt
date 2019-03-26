@@ -151,8 +151,18 @@ class Fir2IrVisitor(
             ).setParentByParentStack()
         }
         withClass {
+            val primaryConstructor = klass.getPrimaryConstructorIfAny()
+            val irPrimaryConstructor = primaryConstructor?.accept(this@Fir2IrVisitor, null) as IrConstructor?
+            if (irPrimaryConstructor != null) {
+                declarations += irPrimaryConstructor
+                for (irParameter in irPrimaryConstructor.valueParameters) {
+                    symbolTable.introduceValueParameter(irParameter)
+                }
+            }
             klass.declarations.forEach {
-                declarations += it.accept(this@Fir2IrVisitor, null) as IrDeclaration
+                if (it !is FirConstructor || !it.isPrimary) {
+                    declarations += it.accept(this@Fir2IrVisitor, null) as IrDeclaration
+                }
             }
             klass.annotations.forEach {
                 annotations += it.accept(this@Fir2IrVisitor, null) as IrCall
