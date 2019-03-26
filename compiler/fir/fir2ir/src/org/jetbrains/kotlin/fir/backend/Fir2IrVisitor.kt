@@ -497,7 +497,14 @@ class Fir2IrVisitor(
         return typeRef.convertWithOffsets { startOffset, endOffset ->
             when {
                 symbol is IrFunctionSymbol -> IrCallImpl(startOffset, endOffset, type, symbol)
-                symbol is IrPropertySymbol && symbol.isBound -> IrCallImpl(startOffset, endOffset, type, symbol.owner.getter!!.symbol)
+                symbol is IrPropertySymbol && symbol.isBound -> {
+                    val getter = symbol.owner.getter
+                    if (getter != null) {
+                        IrCallImpl(startOffset, endOffset, type, getter.symbol)
+                    } else {
+                        IrErrorCallExpressionImpl(startOffset, endOffset, type, "No getter found for ${calleeReference.render()}")
+                    }
+                }
                 symbol is IrValueSymbol -> IrGetValueImpl(
                     startOffset, endOffset, type, symbol,
                     if (calleeReference is FirPropertyFromParameterCallableReference) {
