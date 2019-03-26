@@ -18,14 +18,20 @@ import org.jetbrains.kotlin.ir.builders.*
 import org.jetbrains.kotlin.ir.builders.declarations.*
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.*
-import org.jetbrains.kotlin.ir.expressions.impl.*
-import org.jetbrains.kotlin.ir.symbols.*
-import org.jetbrains.kotlin.ir.types.*
-import org.jetbrains.kotlin.ir.types.impl.*
+import org.jetbrains.kotlin.ir.expressions.impl.IrClassReferenceImpl
+import org.jetbrains.kotlin.ir.expressions.impl.IrInstanceInitializerCallImpl
+import org.jetbrains.kotlin.ir.expressions.impl.IrVarargImpl
+import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
+import org.jetbrains.kotlin.ir.symbols.IrFieldSymbol
+import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
+import org.jetbrains.kotlin.ir.symbols.IrSymbol
+import org.jetbrains.kotlin.ir.types.createType
+import org.jetbrains.kotlin.ir.types.impl.IrSimpleTypeImpl
+import org.jetbrains.kotlin.ir.types.impl.makeTypeProjection
+import org.jetbrains.kotlin.ir.types.typeWith
 import org.jetbrains.kotlin.ir.util.*
-import org.jetbrains.kotlin.ir.visitors.*
+import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 import org.jetbrains.kotlin.load.java.JvmAbi
-import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.types.Variance
 
@@ -60,17 +66,16 @@ internal class PropertyReferenceLowering(val context: JvmBackendContext) : Class
     private val IrMemberAccessExpression.symbol: IrSymbol
         get() = getter?.owner?.symbol ?: field!!.owner.symbol
 
-    private val plainJavaClass =
-        context.getIrClass(FqName("java.lang.Class")).owner
-
     private val reflectionClass =
-        context.getIrClass(FqName("kotlin.jvm.internal.Reflection")).owner
+        context.ir.symbols.reflection.owner
 
-    private val getOrCreateKotlinClass =
+    private val getOrCreateKotlinClass by lazy {
         reflectionClass.functions.single { it.name.asString() == "getOrCreateKotlinClass" && it.valueParameters.size == 1 }
+    }
 
-    private val getOrCreateKotlinPackage =
+    private val getOrCreateKotlinPackage by lazy {
         reflectionClass.functions.single { it.name.asString() == "getOrCreateKotlinPackage" && it.valueParameters.size == 2 }
+    }
 
     private val arrayItemGetter =
         context.ir.symbols.array.owner.functions.single { it.name.asString() == "get" }
@@ -101,8 +106,8 @@ internal class PropertyReferenceLowering(val context: JvmBackendContext) : Class
     private val IrMemberAccessExpression.parentJavaClassReference
         get() = IrClassReferenceImpl(
             startOffset, endOffset,
-            plainJavaClass.defaultType,
-            plainJavaClass.symbol,
+            context.ir.symbols.javaLangClass.typeWith(),
+            context.ir.symbols.javaLangClass,
             // TODO: when the parent is an interface, this should map to DefaultImpls. However, that requires
             //       moving this lowering below InterfaceLowering; see another TODO above.
             CrIrType(context.state.typeMapper.mapImplementationOwner(propertyContainerChild!!.descriptor))
@@ -133,8 +138,8 @@ internal class PropertyReferenceLowering(val context: JvmBackendContext) : Class
     )
 
     private fun propertyReferenceKind(mutable: Boolean, i: Int) = PropertyReferenceKind(
-        context.getIrClass(FqName("kotlin.jvm.internal.${if (mutable) "Mutable" else ""}PropertyReference$i")),
-        context.getIrClass(FqName("kotlin.jvm.internal.${if (mutable) "Mutable" else ""}PropertyReference${i}Impl")),
+        context.ir.symbols.getPropertyReferenceClass(mutable, i, false),
+        context.ir.symbols.getPropertyReferenceClass(mutable, i, true),
         reflectionClass.functions.single { it.name.asString() == (if (mutable) "mutableProperty$i" else "property$i") }
     )
 

@@ -32,7 +32,6 @@ import org.jetbrains.kotlin.ir.util.isKClass
 import org.jetbrains.kotlin.ir.util.isNonPrimitiveArray
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
 import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
-import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.types.Variance
 
 internal val annotationPhase = makeIrFilePhase(
@@ -144,19 +143,16 @@ private class AnnotationLowering(private val context: JvmBackendContext) : FileL
         }
     }
 
-    private val javaLangClass = context.getIrClass(FqName("java.lang.Class"))
-    private val reflectionClass = context.getIrClass(FqName("kotlin.jvm.internal.Reflection"))
-
     private val getOrCreateKClassSymbol by lazy {
-        reflectionClass.getFunctionByName("getOrCreateKotlinClass", 1)
+        context.ir.symbols.reflection.getFunctionByName("getOrCreateKotlinClass", 1)
     }
 
     private val getOrCreateKClassesSymbol by lazy {
-        reflectionClass.getFunctionByName("getOrCreateKotlinClasses", 1)
+        context.ir.symbols.reflection.getFunctionByName("getOrCreateKotlinClasses", 1)
     }
 
     private fun javaClassType(typeArguments: List<IrTypeArgument>): IrType =
-        javaLangClass.createType(false, typeArguments)
+        context.ir.symbols.javaLangClass.createType(false, typeArguments)
 
     private fun javaClassArrayType(variance: Variance, typeArguments: List<IrTypeArgument>): IrType {
         val argument = makeTypeProjection(javaClassType(typeArguments), variance)

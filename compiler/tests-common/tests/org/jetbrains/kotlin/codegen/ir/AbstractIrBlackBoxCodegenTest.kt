@@ -27,6 +27,7 @@ abstract class AbstractIrBlackBoxCodegenTest : AbstractBlackBoxCodegenTest() {
         configuration.put(JVMConfigurationKeys.IR, true)
     }
 
+/*
     //symbols are constructed with stdlib descriptors so stdlib should be presented
     // TODO rewrite symbols building
     override fun extractConfigurationKind(files: MutableList<TestFile>): ConfigurationKind {
@@ -36,6 +37,7 @@ abstract class AbstractIrBlackBoxCodegenTest : AbstractBlackBoxCodegenTest() {
             else -> result
         }
     }
+*/
 
     override fun getBackend() = TargetBackend.JVM_IR
 }

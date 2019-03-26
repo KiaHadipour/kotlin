@@ -15,6 +15,7 @@ import org.jetbrains.kotlin.incremental.components.NoLookupLocation
 import org.jetbrains.kotlin.ir.declarations.IrDeclarationOrigin
 import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
 import org.jetbrains.kotlin.ir.declarations.impl.IrExternalPackageFragmentImpl
+import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
 import org.jetbrains.kotlin.ir.symbols.impl.IrExternalPackageFragmentSymbolImpl
 import org.jetbrains.kotlin.ir.types.toIrType
 import org.jetbrains.kotlin.ir.types.IrSimpleType
@@ -175,6 +176,22 @@ class IrBuiltIns(
 
     val kCallableClass = builtIns.getBuiltInClassByFqName(KotlinBuiltIns.FQ_NAMES.kCallable.toSafe()).toIrSymbol()
     val kPropertyClass = builtIns.getBuiltInClassByFqName(KotlinBuiltIns.FQ_NAMES.kPropertyFqName.toSafe()).toIrSymbol()
+    val kDeclarationContainerClass = builtIns.getBuiltInClassByFqName(KotlinBuiltIns.FQ_NAMES.kDeclarationContainer.toSafe()).toIrSymbol()
+    val kClassClass = builtIns.kClass.toIrSymbol()
+
+    private val kProperty0Class = builtIns.getBuiltInClassByFqName(KotlinBuiltIns.FQ_NAMES.kProperty0.toSafe()).toIrSymbol()
+    private val kProperty1Class = builtIns.getBuiltInClassByFqName(KotlinBuiltIns.FQ_NAMES.kProperty1.toSafe()).toIrSymbol()
+    private val kProperty2Class = builtIns.getBuiltInClassByFqName(KotlinBuiltIns.FQ_NAMES.kProperty2.toSafe()).toIrSymbol()
+    private val kMutableProperty0Class = builtIns.getBuiltInClassByFqName(KotlinBuiltIns.FQ_NAMES.kMutableProperty0.toSafe()).toIrSymbol()
+    private val kMutableProperty1Class = builtIns.getBuiltInClassByFqName(KotlinBuiltIns.FQ_NAMES.kMutableProperty1.toSafe()).toIrSymbol()
+    private val kMutableProperty2Class = builtIns.getBuiltInClassByFqName(KotlinBuiltIns.FQ_NAMES.kMutableProperty2.toSafe()).toIrSymbol()
+
+    fun getKPropertyClass(mutable: Boolean, n: Int): IrClassSymbol = when (n) {
+        0 -> if (mutable) kMutableProperty0Class else kProperty0Class
+        1 -> if (mutable) kMutableProperty1Class else kProperty1Class
+        2 -> if (mutable) kMutableProperty2Class else kProperty2Class
+        else -> error("No KProperty for n=$n mutable=$mutable")
+    }
 
     // TODO switch to IrType
     val primitiveTypes = listOf(bool, char, byte, short, int, long, float, double)

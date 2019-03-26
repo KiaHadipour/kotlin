@@ -103,7 +103,7 @@ internal class CallableReferenceLowering(val context: JvmBackendContext) : FileL
                         context.irBuiltIns.anyClass.typeWith(),
                         (0 until argumentsCount).map { i -> expression.getValueArgument(i)!! }
                     )
-                    val invokeFun = context.getIrClass(FqName("kotlin.jvm.functions.FunctionN")).owner.declarations.single {
+                    val invokeFun = context.ir.symbols.functionN.owner.declarations.single {
                         it is IrSimpleFunction && it.name.asString() == "invoke"
                     } as IrSimpleFunction
 
@@ -154,10 +154,6 @@ internal class CallableReferenceLowering(val context: JvmBackendContext) : FileL
         val functionReferenceConstructor: IrConstructor
     )
 
-    private val continuationClass = context.getIrClass(FqName("kotlin.coroutines.experimental.Continuation")).owner
-
-    //private val getContinuationSymbol = context.ir.symbols.getContinuation
-
     private inner class FunctionReferenceBuilder(
         val referenceParent: IrDeclarationParent,
         val irFunctionReference: IrFunctionReference
@@ -193,9 +189,9 @@ internal class CallableReferenceLowering(val context: JvmBackendContext) : FileL
             useVararg = (numberOfParameters > MAX_ARGCOUNT_WITHOUT_VARARG)
 
             val functionClassSymbol = if (useVararg)
-                context.getIrClass(FqName("kotlin.jvm.functions.FunctionN"))
+                context.ir.symbols.functionN
             else
-                context.getIrClass(FqName("kotlin.jvm.functions.Function$numberOfParameters"))
+                context.ir.symbols.getJvmFunctionClass(numberOfParameters)
             val functionClass = functionClassSymbol.owner
             val functionParameterTypes = unboundCalleeParameters.map { it.type }
             val functionClassTypeParameters = if (useVararg)
@@ -211,7 +207,9 @@ internal class CallableReferenceLowering(val context: JvmBackendContext) : FileL
 
             var suspendFunctionClass: IrClass? = null
             val lastParameterType = unboundCalleeParameters.lastOrNull()?.type
-            if ((lastParameterType as? IrSimpleType)?.classifier == continuationClass) {
+            if (lastParameterType is IrSimpleType &&
+                lastParameterType.classOrNull?.owner?.fqNameWhenAvailable?.asString() == "kotlin.coroutines.experimental.Continuation"
+            ) {
                 // If the last parameter is Continuation<> inherit from SuspendFunction.
                 suspendFunctionClass = context.getIrClass(FqName("kotlin.SuspendFunction${numberOfParameters - 1}")).owner
                 val suspendFunctionClassTypeParameters = functionParameterTypes.dropLast(1) +
@@ -542,16 +540,16 @@ internal class CallableReferenceLowering(val context: JvmBackendContext) : FileL
                 else -> state.typeMapper.mapOwner(callee.descriptor)
             }
 
-            val clazz = globalContext.getIrClass(FqName("java.lang.Class")).owner
+            val clazz = globalContext.ir.symbols.javaLangClass
             val clazzRef = IrClassReferenceImpl(
                 UNDEFINED_OFFSET,
                 UNDEFINED_OFFSET,
-                clazz.defaultType,
-                clazz.symbol,
+                clazz.typeWith(),
+                clazz,
                 CrIrType(type)
             )
 
-            val reflectionClass = globalContext.getIrClass(FqName("kotlin.jvm.internal.Reflection"))
+            val reflectionClass = globalContext.ir.symbols.reflection
             return if (isContainerPackage) {
                 // Note that this name is not used in reflection. There should be the name of the referenced declaration's module instead,
                 // but there's no nice API to obtain that name here yet
